@@ -12,6 +12,8 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout
@@ -23,36 +25,50 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
 
-      - name: Install Android SDK packages
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Use preinstalled Android SDK
+        run: |
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort | tail -n 1)
+          if [ -z "$SDKMANAGER" ]; then
+            echo "sdkmanager not found"
+            exit 1
+          fi
+          chmod +x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --sdk_root="$ANDROID_HOME" --licenses >/dev/null || true
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Extract source ZIP
         run: |
           ZIP_FILE=$(find . -maxdepth 2 -type f -name '*.zip' | head -n 1)
           if [ -z "$ZIP_FILE" ]; then
-            echo "No source ZIP found"
+            echo "Source ZIP not found"
             exit 1
           fi
           mkdir extracted
           unzip -q "$ZIP_FILE" -d extracted
           PROJECT_DIR=$(dirname "$(find extracted -name settings.gradle.kts -print -quit)")
           if [ -z "$PROJECT_DIR" ]; then
-            echo "Gradle project not found in ZIP"
+            echo "Gradle project not found"
             exit 1
           fi
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: Build APK
         run: |
-          gradle --version
           gradle -p "$PROJECT_DIR" :app:assembleDebug
+
+      - name: Prepare APK
+        run: |
+          mkdir -p output
+          cp "$PROJECT_DIR/app/build/outputs/apk/debug/app-debug.apk" output/
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: TiBanAI-APK
-          path: extracted/**/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+          path: output/app-debug.apk

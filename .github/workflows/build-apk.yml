@@ -58,6 +58,33 @@ jobs:
             exit 1
           fi
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          
+
+      - name: Fix JVM target compatibility
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          project = Path(os.environ["PROJECT_DIR"])
+          gradle_file = project / "app" / "build.gradle.kts"
+          content = gradle_file.read_text()
+
+          content = content.replace(
+              "    defaultConfig {",
+              """    compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
+              defaultConfig {"""
+          )
+
+          gradle_file.write_text(content)
+          print("Java and Kotlin targets set to 17")
+          PY
 
       - name: Build APK
         run: |
